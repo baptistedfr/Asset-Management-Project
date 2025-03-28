@@ -24,7 +24,9 @@ class Backtester:
         self.df_prices : pd.DataFrame = df_prices
         self.df_weights : pd.DataFrame = df_weights
         self.df_prices['Date'] = pd.to_datetime(self.df_prices['Date'], format = "%Y-%m-%d")
+        self.df_prices.set_index("Date", inplace = True)
         self.df_weights['Date'] = pd.to_datetime(self.df_weights['Date'],format = "%Y-%m-%d")
+        self.df_weights.set_index("Date", inplace = True)
 
     def run(self, 
             start_date_str : str,
@@ -60,9 +62,9 @@ class Backtester:
         common_tickers = self.get_tickers_in_range(start_date_dt, end_date)
         
         # Get the prices & returns for the selected tickers
-        df_prices = self.df_prices.loc[(self.df_prices['Date'] >= start_date) & (self.df_prices['Date'] <= end_date), ['Date'] + list(common_tickers)]
-        df_returns = df_prices.iloc[:,1:].pct_change()
-        all_dates = sorted(set(df_prices["Date"].to_numpy()))
+        df_prices = self.df_prices.loc[(self.df_prices.index >= start_date) & (self.df_prices.index <= end_date), list(common_tickers)]
+        df_returns = df_prices.pct_change()
+        all_dates = sorted(set(df_prices.index.to_numpy()))
     
         """Get the rebalancing dates"""
         rebalancing_dates = self._get_rebalancing_dates(df_prices, strategy.rebalance_frequency)
@@ -84,12 +86,13 @@ class Backtester:
         #     benchmark_value = initial_amount
         #     stored_benchmark = [benchmark_value]
         #     benchmark_returns_matrix = benchmark_returns_matrix.to_numpy()
+        
         total_fees = 0
         for t in tqdm(range(strategy.lookback_period+1, len(df_prices)),desc=f"Running Backtesting {strat_name}"):
             current_date = all_dates[t]
 
             # Filtrer les rendements pour les tickers actifs
-            active_returns = df_returns.loc[df_prices['Date'] == current_date, list(weights.keys())].fillna(0).squeeze().to_dict()
+            active_returns = df_returns.loc[df_prices.index == current_date, list(weights.keys())].fillna(0).squeeze().to_dict()
             
             # Calculer la valeur du portefeuille
             daily_returns = np.array([active_returns.get(ticker, 0) for ticker in weights.keys()])
@@ -101,7 +104,7 @@ class Backtester:
                 """Get the new tickers in the universe"""
                 actual_tickers = self.get_tickers_in_range(all_dates[t])
                 """Use Strategy to compute new weights (Rebalancement)"""
-                new_weights = strategy.get_position(df_prices.loc[df_prices['Date'] <= current_date, list(actual_tickers)].to_numpy(), prev_weights)
+                new_weights = strategy.get_position(df_prices.loc[df_prices.index <= current_date, list(actual_tickers)].to_numpy(), prev_weights)
                 new_weights = dict(zip(actual_tickers, new_weights / np.sum(new_weights)))
                 """Compute transaction costs"""
                 transaction_costs = self.calculate_transaction_costs(weights, new_weights, fees)
@@ -188,38 +191,38 @@ class Backtester:
         Repère les indices correspondant aux dates de rebalancement en fonction de la fréquence donnée.
 
         Args:
-            df_prices (pd.DataFrame): DataFrame contenant les prix avec une colonne 'Date'.
+            df_prices (pd.DataFrame): DataFrame contenant les prix avec un index de type datetime.
             frequency (FrequencyType): Fréquence de rebalancement souhaitée.
             custom_freq (str, optional): Fréquence personnalisée (ex: '2M' pour bimensuel, 'Q' pour trimestriel).
 
         Returns:
             list: Liste des dates de rebalancement.
         """
-        if not pd.api.types.is_datetime64_any_dtype(df_prices["Date"]):
-            df_prices["Date"] = pd.to_datetime(df_prices["Date"])
+        if not pd.api.types.is_datetime64_any_dtype(df_prices.index):
+            df_prices.index = pd.to_datetime(df_prices.index)
 
         if frequency == FrequencyType.DAILY:
             # Toutes les dates sont incluses
-            return df_prices["Date"].tolist()
+            return df_prices.index.tolist()
 
         if frequency == FrequencyType.WEEKLY:
             # Rebalancement hebdomadaire
-            return df_prices.groupby(df_prices["Date"].dt.to_period("W"))["Date"].max().tolist()
+            return df_prices.groupby(df_prices.index.to_period("W")).apply(lambda group: group.index[-1]).tolist()
 
         if frequency == FrequencyType.MONTHLY:
             # Rebalancement mensuel
-            return df_prices.groupby(df_prices["Date"].dt.to_period("M"))["Date"].max().tolist()
+            return df_prices.groupby(df_prices.index.to_period("M")).apply(lambda group: group.index[-1]).tolist()
 
         if frequency == FrequencyType.QUARTERLY:
             # Rebalancement trimestriel
-            return df_prices.groupby(df_prices["Date"].dt.to_period("Q"))["Date"].max().tolist()
+            return df_prices.groupby(df_prices.index.to_period("Q")).apply(lambda group: group.index[-1]).tolist()
 
         if custom_freq:
             # Rebalancement avec une fréquence personnalisée (ex: '2M' pour bimensuel)
-            return df_prices.resample(custom_freq, on="Date")["Date"].max().dropna().tolist()
+            return df_prices.groupby(df_prices.index.to_period(custom_freq)).apply(lambda group: group.index[-1]).tolist()
 
         raise ValueError("Fréquence de rebalancement non supportée.")
-    
+        
     def _valide_inputs(self, strategy : AbstractStrategy, initial_amount : int, fees : float, ):
         if not isinstance(initial_amount, (int, float)) or initial_amount <= 0:
             raise ValueError("Initial amount must be a positive number.")
@@ -242,7 +245,7 @@ class Backtester:
         """
 
         # Dernière composition avant start_date
-        closest_row_universe = self.df_weights[self.df_weights['Date'] <= start_date_dt].sort_values('Date').tail(1).iloc[:,1:]
+        closest_row_universe = self.df_weights[self.df_weights.index <= start_date_dt].tail(1)
 
         if closest_row_universe.empty:
             raise ValueError("Impossible de récupérer la composition de l'univers avant la start_date.")
@@ -254,8 +257,8 @@ class Backtester:
 
         # Si une date de fin est spécifiée, récupérer les tickers actifs dans la plage de dates
         if end_date_dt:
-            filtered_universe = self.df_weights[(self.df_weights['Date'] >= start_date_dt) & 
-                                                (self.df_weights['Date'] <= end_date_dt)].iloc[:,1:]
+            filtered_universe = self.df_weights[(self.df_weights.index >= start_date_dt) & 
+                                                (self.df_weights.index <= end_date_dt)]
             
             if not filtered_universe.empty:
                 active_tickers = set(
@@ -276,7 +279,7 @@ class Backtester:
     
     @staticmethod
     def get_analysis_dates(price_df: pd.DataFrame, computation_date: datetime, 
-                           n_before: int = 253,
+                           n_before: int = 252,
                            end_date: datetime = None):
         """
         Récupère les dates de début et de fin pour l'analyse en fonction des jours de marché.
@@ -289,7 +292,7 @@ class Backtester:
         Returns:
             tuple(datetime, datetime): (start_date, end_date)
         """
-        price_dates = price_df['Date'].sort_values().unique()
+        price_dates = price_df.index.sort_values().unique()
 
         # Trouver les dates avant computation_date
         past_dates = price_dates[price_dates < computation_date]
