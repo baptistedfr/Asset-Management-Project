@@ -262,7 +262,10 @@ class Backtester:
         if frequency == FrequencyType.QUARTERLY:
             # Rebalancement trimestriel
             return df_prices.groupby(df_prices.index.to_period("Q")).apply(lambda group: group.index[-1]).tolist()
-
+        
+        if frequency == FrequencyType.ANNUALLY:
+            # Rebalancement trimestriel
+            return df_prices.groupby(df_prices.index.to_period("A")).apply(lambda group: group.index[-1]).tolist()
         if custom_freq:
             # Rebalancement avec une fréquence personnalisée (ex: '2M' pour bimensuel)
             return df_prices.groupby(df_prices.index.to_period(custom_freq)).apply(lambda group: group.index[-1]).tolist()
