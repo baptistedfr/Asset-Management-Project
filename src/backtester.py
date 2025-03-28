@@ -20,13 +20,47 @@ class Backtester:
         data_input (DataInput) : data input object containing assets prices historic
     """
 
-    def __init__(self, df_prices : pd.DataFrame, df_weights : pd.DataFrame = None):
-        self.df_prices : pd.DataFrame = df_prices
-        self.df_weights : pd.DataFrame = df_weights
-        self.df_prices['Date'] = pd.to_datetime(self.df_prices['Date'], format = "%Y-%m-%d")
-        self.df_prices.set_index("Date", inplace = True)
-        self.df_weights['Date'] = pd.to_datetime(self.df_weights['Date'],format = "%Y-%m-%d")
-        self.df_weights.set_index("Date", inplace = True)
+    def __init__(self, df_prices: pd.DataFrame, df_weights: pd.DataFrame, df_benchmark: pd.DataFrame = None):
+        """
+        Initialise le Backtester avec les données nécessaires.
+
+        Args:
+            df_prices (pd.DataFrame): DataFrame contenant les prix des actifs avec une colonne 'Date'.
+            df_weights (pd.DataFrame): DataFrame contenant les poids des actifs avec une colonne 'Date'.
+            df_benchmark (pd.DataFrame, optional): DataFrame contenant les données du benchmark avec une colonne 'Date'. Default: None.
+        """
+        # Vérification des colonnes nécessaires
+        required_columns = ['Date']
+        for df, name in [(df_prices, "df_prices"), (df_weights, "df_weights"), (df_benchmark, "df_benchmark")]:
+            if df is not None and not all(col in df.columns for col in required_columns):
+                raise ValueError(f"{name} doit contenir une colonne 'Date'.")
+
+        # Conversion des dates et définition des index
+        self.df_prices = self._prepare_dataframe(df_prices, "df_prices")
+        self.df_weights = self._prepare_dataframe(df_weights, "df_weights")
+        self.df_benchmark = self._prepare_dataframe(df_benchmark, "df_benchmark") if df_benchmark is not None else None
+        
+    @staticmethod
+    def _prepare_dataframe(df: pd.DataFrame, name: str) -> pd.DataFrame:
+        """
+        Prépare un DataFrame en vérifiant la colonne 'Date', en la convertissant en datetime et en la définissant comme index.
+
+        Args:
+            df (pd.DataFrame): Le DataFrame à préparer.
+            name (str): Nom du DataFrame (pour les messages d'erreur).
+
+        Returns:
+            pd.DataFrame: DataFrame préparé avec 'Date' comme index.
+        """
+        if 'Date' not in df.columns:
+            raise ValueError(f"{name} doit contenir une colonne 'Date'.")
+        
+        df['Date'] = pd.to_datetime(df['Date'], format="%Y-%m-%d", errors='coerce')
+        if df['Date'].isna().any():
+            raise ValueError(f"{name} contient des dates invalides.")
+        
+        df.set_index('Date', inplace=True)
+        return df
 
     def run(self, 
             start_date_str : str,
@@ -64,6 +98,7 @@ class Backtester:
         # Get the prices & returns for the selected tickers
         df_prices = self.df_prices.loc[(self.df_prices.index >= start_date) & (self.df_prices.index <= end_date), list(common_tickers)]
         df_returns = df_prices.pct_change()
+        
         all_dates = sorted(set(df_prices.index.to_numpy()))
     
         """Get the rebalancing dates"""
@@ -80,12 +115,12 @@ class Backtester:
         weights = dict(zip(actual_tickers, [1/len(actual_tickers)] * len(actual_tickers)))
         weights_dict[all_dates[strategy.lookback_period]] = weights
 
-        stored_values = [strat_value]
-        # benchmark_returns_matrix = self.benchmark_returns
-        # if benchmark_returns_matrix is not None :
-        #     benchmark_value = initial_amount
-        #     stored_benchmark = [benchmark_value]
-        #     benchmark_returns_matrix = benchmark_returns_matrix.to_numpy()
+        stored_benchmark = None
+        if self.df_benchmark is not None :
+            benchmark_prices = self.df_benchmark.loc[(self.df_benchmark.index >= start_date) & (self.df_benchmark.index <= end_date), :].reindex(df_prices.index).fillna(method="ffill")
+            benchmark_returns = benchmark_prices.pct_change()
+            benchmark_value = initial_amount
+            stored_benchmark = [benchmark_value]
         
         total_fees = 0
         for t in tqdm(range(strategy.lookback_period+1, len(df_prices)),desc=f"Running Backtesting {strat_name}"):
@@ -119,13 +154,24 @@ class Backtester:
             total_weight = sum(new_weights.values())
             new_weights = {ticker: weight / total_weight for ticker, weight in new_weights.items()}
 
+            """Compute & sotre the new benchmark value"""
+            if stored_benchmark is not None :
+                benchmark_rdt = benchmark_returns.loc[benchmark_returns.index == current_date, "MSCI"].iloc[0]
+                benchmark_value *= (1 + benchmark_rdt)
+                stored_benchmark.append(benchmark_value)
+
             # Stocker les résultats
             weights = new_weights
             strat_value = new_strat_value
             weights_dict[current_date] =weights
             stored_values.append(strat_value)
         
-        return self.output(strat_name, stored_values, weights_dict, None, list(weights_dict.keys()), FrequencyType.DAILY )
+        return self.output(strategy_name = strat_name, 
+                           stored_values = stored_values, 
+                           stored_weights = weights_dict, 
+                           stored_benchmark = stored_benchmark, 
+                           dates = list(weights_dict.keys()), 
+                           frequency = FrequencyType.DAILY )
             
     def output(self, strategy_name : str, 
                stored_values : list[float], 
