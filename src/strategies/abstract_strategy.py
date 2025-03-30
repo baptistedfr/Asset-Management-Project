@@ -20,7 +20,7 @@ class AbstractStrategy(ABC):
         self.lookback_period = lookback_period
 
     @abstractmethod
-    def get_position(self, historical_data : np.ndarray[float], current_position: np.ndarray[float]) -> np.ndarray[float]:
+    def get_position(self, historical_data : np.ndarray[float], current_position: np.ndarray[float], benchmark: Optional[np.ndarray] = None) -> np.ndarray[float]:
         """
         Mandatory method to be implemented by all strategies.
         Calculates the new position based on historical data and the current position.

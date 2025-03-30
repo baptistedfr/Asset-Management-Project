@@ -135,11 +135,20 @@ class Backtester:
             return_strat = np.dot(prev_weights, daily_returns)
             new_strat_value = strat_value * (1 + return_strat)
             
+            """Compute & sotre the new benchmark value"""
+            if stored_benchmark is not None :
+                benchmark_rdt = benchmark_returns.loc[benchmark_returns.index == current_date, "MSCI"].iloc[0]
+                benchmark_value *= (1 + benchmark_rdt)
+                stored_benchmark.append(benchmark_value)
+
             if current_date in rebalancing_dates:
                 """Get the new tickers in the universe"""
                 actual_tickers = self.get_tickers_in_range(all_dates[t])
                 """Use Strategy to compute new weights (Rebalancement)"""
-                new_weights = strategy.get_position(df_prices.loc[df_prices.index <= current_date, list(actual_tickers)].to_numpy(), prev_weights)
+                new_weights = strategy.get_position(df_prices.loc[df_prices.index <= current_date, list(actual_tickers)].fillna(method="ffill").to_numpy(), 
+                                                    prev_weights, 
+                                                    benchmark_prices.loc[df_prices.index <= current_date,:].fillna(method="ffill").to_numpy())
+                
                 new_weights = dict(zip(actual_tickers, new_weights / np.sum(new_weights)))
                 """Compute transaction costs"""
                 transaction_costs = self.calculate_transaction_costs(weights, new_weights, fees)
@@ -154,11 +163,7 @@ class Backtester:
             total_weight = sum(new_weights.values())
             new_weights = {ticker: weight / total_weight for ticker, weight in new_weights.items()}
 
-            """Compute & sotre the new benchmark value"""
-            if stored_benchmark is not None :
-                benchmark_rdt = benchmark_returns.loc[benchmark_returns.index == current_date, "MSCI"].iloc[0]
-                benchmark_value *= (1 + benchmark_rdt)
-                stored_benchmark.append(benchmark_value)
+            
 
             # Stocker les résultats
             weights = new_weights

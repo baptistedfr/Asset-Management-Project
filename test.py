@@ -1,5 +1,5 @@
 import pandas as pd
-from src import Backtester, FractileMomentumStrategy, Results
+from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy
 from src.tools import FrequencyType
 df_price = pd.read_parquet('data/msci_prices.parquet')
 df_weight = pd.read_parquet('data/indices.parquet')
@@ -93,4 +93,25 @@ def compute_momentum_mean_reverting(df_price, df_weight, df_benchmark):
 
 # compute_momentum_1y(df_price, df_weight, df_benchmark)
 
-compute_momentum_mean_reverting(df_price, df_weight, df_benchmark)
+# compute_momentum_mean_reverting(df_price, df_weight, df_benchmark)
+start_date="2007-05-01"
+end_date="2024-12-31"
+strategy = IdiosyncraticMomentumStrategy(
+                rebalance_frequency=FrequencyType.MONTHLY,
+                nb_fractile=4,
+                lookback_period=252,
+                n_ante = 21,
+                mean_reverting = False
+            )
+backtest = Backtester(df_price, df_weight, df_benchmark)
+# Exécuter le backtest
+result = backtest.run(
+    start_date,
+    end_date,
+    strategy,
+    custom_name=f"Idiosyncratic"
+)
+
+print(result.df_statistics.head(20))
+result.ptf_value_plot.show()
+result.ptf_drawdown_plot.show()
