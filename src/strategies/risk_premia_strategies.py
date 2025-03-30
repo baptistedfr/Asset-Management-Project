@@ -10,7 +10,7 @@ import pandas as pd
 class FractileMomentumStrategy(AbstractStrategy):
     
     def __init__(self, rebalance_frequency : FrequencyType = FrequencyType.MONTHLY, lookback_period : float = 252, 
-                 nb_fractile = 4, n_ante = 21, mean_reverting : bool = False):
+                 nb_fractile = 4,  n_ante = 21, mean_reverting : bool = False):
         
         super().__init__(rebalance_frequency, lookback_period)
         self.nb_fractile = nb_fractile
@@ -29,7 +29,7 @@ class FractileMomentumStrategy(AbstractStrategy):
             np.ndarray: Nouvelles pondérations pour chaque actif.
         """
         # Extrait les données pertinentes pour le lookback period
-        data = historical_data[-int(self.lookback_period) :-self.n_ante - 1]
+        data = historical_data[-int(self.lookback_period) - 1 :-self.n_ante - 1]
         # Calcule les nouvelles pondérations en utilisant la méthode fit
         new_weights = self.fit(data)
         return new_weights
