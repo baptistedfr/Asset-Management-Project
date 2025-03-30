@@ -10,11 +10,12 @@ import pandas as pd
 class FractileMomentumStrategy(AbstractStrategy):
     
     def __init__(self, rebalance_frequency : FrequencyType = FrequencyType.MONTHLY, lookback_period : float = 252, 
-                 nb_fractile = 4, n_ante = 21):
+                 nb_fractile = 4, n_ante = 21, mean_reverting : bool = False):
         
         super().__init__(rebalance_frequency, lookback_period)
         self.nb_fractile = nb_fractile
         self.n_ante = n_ante  # Nombre de jours exclus avant la date actuelle
+        self.mean_reverting = mean_reverting
 
     def get_position(self, historical_data: np.ndarray, current_position: np.ndarray) -> np.ndarray:
         """
@@ -28,7 +29,7 @@ class FractileMomentumStrategy(AbstractStrategy):
             np.ndarray: Nouvelles pondérations pour chaque actif.
         """
         # Extrait les données pertinentes pour le lookback period
-        data = historical_data[-int(self.lookback_period) :-self.n_ante]
+        data = historical_data[-int(self.lookback_period) :-self.n_ante - 1]
         # Calcule les nouvelles pondérations en utilisant la méthode fit
         new_weights = self.fit(data)
         return new_weights
@@ -55,8 +56,14 @@ class FractileMomentumStrategy(AbstractStrategy):
         # Initialisation des pondérations
         weights = np.zeros_like(zscores)
 
-        #Long sur le premier fractile (z-scores les plus bas)
-        long_fractile = np.where(fractiles == np.max(fractiles))[0]
+        
+        if self.mean_reverting :
+            # Long sur les actifs qui sous performent
+            long_fractile = np.where(fractiles == 0)[0]
+        else:
+            # Long sur les actifs qui surperforment
+            long_fractile = np.where(fractiles == np.max(fractiles))[0]
+
         weights[long_fractile] = 1 / len(long_fractile)
 
         # # Short sur le dernier fractile (z-scores les plus élevés)

@@ -193,14 +193,18 @@ class Backtester:
 
         ptf_weights = pd.DataFrame(stored_weights).T
         ptf_values = pd.Series(stored_values, index=dates)
+        
+        benchmark_values = None
+        if stored_benchmark is not None :
+            benchmark_values = pd.Series(stored_benchmark, index=dates)
 
-        results_strat = Results(ptf_values=ptf_values, ptf_weights=ptf_weights, strategy_name=strategy_name, data_frequency=frequency)
+        results_strat = Results(ptf_values=ptf_values, ptf_weights=ptf_weights, 
+                                strategy_name=strategy_name, data_frequency=frequency, 
+                                benchmark_values= benchmark_values)
         results_strat.get_statistics()
         results_strat.create_plots()
 
         if stored_benchmark is not None :
-
-            benchmark_values = pd.Series(stored_benchmark, index=dates)
             results_bench = Results(ptf_values=benchmark_values, strategy_name="Benchmark", data_frequency=frequency)
             results_bench.get_statistics()
             results_bench.create_plots()

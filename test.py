@@ -5,71 +5,31 @@ df_price = pd.read_parquet('data/msci_prices.parquet')
 df_weight = pd.read_parquet('data/indices.parquet')
 df_benchmark = pd.read_parquet('data/MSCI WORLD.parquet')
 
-
-monthly_strat_percentile = FractileMomentumStrategy(rebalance_frequency = FrequencyType.MONTHLY,lookback_period = 252, nb_fractile = 100)
-monthly_strat_5 = FractileMomentumStrategy(rebalance_frequency = FrequencyType.MONTHLY,lookback_period = 252, nb_fractile = 20)
-
-# monthly_strat_quartile = FractileMomentumStrategy(rebalance_frequency = FrequencyType.MONTHLY,lookback_period = 252, nb_fractile = 4)
-# quarterly_strat_quartile = FractileMomentumStrategy(rebalance_frequency = FrequencyType.QUARTERLY,lookback_period = 252, nb_fractile = 4)
-
-# monthly_strat_decile = FractileMomentumStrategy(rebalance_frequency = FrequencyType.MONTHLY,lookback_period = 252, nb_fractile = 10)
-# quarterly_strat_decile = FractileMomentumStrategy(rebalance_frequency = FrequencyType.QUARTERLY,lookback_period = 252, nb_fractile = 10)
+list_fractile = {"Quartile" : 4, "Quintile":5, "Decile":10}
+list_rebalance = {"MONTHLY":FrequencyType.MONTHLY, "QUARTERLY":FrequencyType.QUARTERLY}
 
 backtest = Backtester(df_price, df_weight, df_benchmark)
+results = []
+for type, nb_fractile in list_fractile.items():
+    for name_rebalance, rebalance_type in list_rebalance.items():
+        strategy = FractileMomentumStrategy(rebalance_frequency = rebalance_type,
+                                            lookback_period = 252, 
+                                            nb_fractile = nb_fractile,
+                                            n_ante=0)
+
+        result = backtest.run(
+            "2007-05-01",
+            "2024-12-31",
+            strategy,
+            fees = 0.0005,
+            custom_name = f"{name_rebalance} {type}"
+        )
+        results.append(result)
 
 
-result_annualy_percentile = backtest.run(
-    "2007-05-01",
-    "2024-12-31",
-    monthly_strat_percentile,
-    fees = 0.0005,
-    custom_name = "Percentile Monthly"
-)
-
-result_annualy_decile = backtest.run(
-    "2007-05-01",
-    "2024-12-31",
-    monthly_strat_5,
-    fees = 0.0005,
-    custom_name = "5% Monthly"
-)
-
-# result_monthly_quartile = backtest.run(
-#     "2007-05-01",
-#     "2024-12-31",
-#     monthly_strat_quartile,
-#     fees = 0.0005,
-#     custom_name = "Quartile Monthly"
-# )
-
-# result_quarterly_quartile = backtest.run(
-#     "2007-05-01",
-#     "2024-12-31",
-#     quarterly_strat_quartile,
-#     fees = 0.0005,
-#     custom_name = "Quartile quarterly"
-# )
-
-# result_monthly_decile = backtest.run(
-#     "2007-05-01",
-#     "2024-12-31",
-#     monthly_strat_decile,
-#     fees = 0.0005,
-#     custom_name = "Decile monthly"
-# )
-
-# result_quarterly_decile = backtest.run(
-#     "2007-05-01",
-#     "2024-12-31",
-#     quarterly_strat_decile,
-#     fees = 0.0005,
-#     custom_name = "Decile quarterly"
-# )
-
-combined_results = Results.compare_results([result_annualy_percentile, result_annualy_decile])
+combined_results = Results.compare_results(results)
+combined_results.df_statistics.to_excel("results/statistics/no_ante.xlsx", index = True)
 '''Visualisation des résultats'''
-print(combined_results.df_statistics.head(10))
+print(combined_results.df_statistics.head(20))
 combined_results.ptf_value_plot.show()
 combined_results.ptf_drawdown_plot.show()
-for plot in combined_results.ptf_weights_plot:
-    plot.show()

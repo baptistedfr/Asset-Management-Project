@@ -6,33 +6,44 @@ import pandas as pd
 import numpy as np
 from functools import cached_property
 from .tools import FrequencyType
+from datetime import datetime
 
 @dataclass
 class Results:
-    """
-    Output from the backtest : computed statistic from the portfolio values and create main plots
 
-    Args: 
-        ptf_values (pd.Series) : value of the strategy over time
-        strategy_name (str) : name of the used strategy
-        data_frequency (FrequencyType) : frequency of the input data, used to annualise volatility and return
-        ptf_weights (optional pd.DataFrame) : weights of every asset over time
-    """
+    def __init__(self, 
+             ptf_values: pd.Series, 
+             strategy_name: str, 
+             data_frequency: FrequencyType, 
+             ptf_weights: pd.DataFrame = None,
+             df_statistics: pd.DataFrame = None, 
+             ptf_value_plot: go.Figure = None,  
+             ptf_drawdown_plot: go.Figure = None, 
+             ptf_weights_plot: Union[go.Figure, list[go.Figure]] = None,
+             benchmark_values : pd.Series = None):
+        """
+        Initialise une instance de la classe Results.
 
-    """---------------------------------------------------------------------------------------
-    -                                 Class arguments                                        -
-    ---------------------------------------------------------------------------------------"""
-
-    ptf_values : pd.Series
-    strategy_name : str
-    data_frequency : FrequencyType
-    ptf_weights : Optional[pd.DataFrame] = None
-    rf : float = 0.02
-    df_statistics : pd.DataFrame = None
-    ptf_value_plot : go.Figure = None
-    ptf_drawdown_plot : go.Figure = None
-    ptf_weights_plot : Union[go.Figure, list[go.Figure]] = None
-
+        Args:
+            ptf_values (pd.Series): Valeurs du portefeuille au fil du temps (indexé par date).
+            strategy_name (str): Nom de la stratégie utilisée.
+            data_frequency (FrequencyType): Fréquence des données (ex: DAILY, MONTHLY).
+            ptf_weights (pd.DataFrame, optional): Poids des actifs dans le portefeuille au fil du temps. Default: None.
+            df_statistics (pd.DataFrame, optional): DataFrame contenant les statistiques calculées pour la stratégie. Default: None.
+            ptf_value_plot (go.Figure, optional): Graphique de l'évolution des valeurs du portefeuille. Default: None.
+            ptf_drawdown_plot (go.Figure, optional): Graphique des drawdowns du portefeuille. Default: None.
+            ptf_weights_plot (Union[go.Figure, list[go.Figure]], optional): Graphique(s) des poids des actifs. Default: None.
+        """
+        self.ptf_values: pd.Series = ptf_values
+        self.strategy_name: str = strategy_name
+        self.data_frequency: FrequencyType = data_frequency
+        self.ptf_weights: Optional[pd.DataFrame] = ptf_weights
+        self.df_statistics: Optional[pd.DataFrame] = df_statistics
+        self.ptf_value_plot: Optional[go.Figure] = ptf_value_plot
+        self.ptf_drawdown_plot: Optional[go.Figure] = ptf_drawdown_plot
+        self.ptf_weights_plot: Optional[Union[go.Figure, list[go.Figure]]] = ptf_weights_plot
+        self.benchmark_values : Optional[pd.DataFrame] = benchmark_values
+        self.rf = 0.0
     """---------------------------------------------------------------------------------------
     -                                 Generate Statistics                                    -
     ---------------------------------------------------------------------------------------"""
@@ -41,17 +52,35 @@ class Results:
     def ptf_returns(self) -> list[float]:
         return list(pd.Series(self.ptf_values).pct_change().iloc[1:])
     
+    @cached_property
+    def benchmark_returns(self) -> list[float]:
+        if self.benchmark_values is not None:
+            return list(pd.Series(self.benchmark_values).pct_change().iloc[1:])
+        return None
+    
     @property
     def total_return(self) -> float:
         return (self.ptf_values.iloc[-1] / self.ptf_values.iloc[0]) - 1
-    
+        
     @property
     def annualized_return(self) -> float:
         return (self.ptf_values.iloc[-1]/self.ptf_values.iloc[0])**(self.data_frequency.value/len(self.ptf_values)) - 1
+    
+    @property
+    def annualized_benchmark_return(self) -> float:
+        if self.benchmark_values is not None:
+            return (self.benchmark_values.iloc[-1]/self.benchmark_values.iloc[0])**(self.data_frequency.value/len(self.benchmark_values)) - 1
+        return None
 
     @cached_property
     def annualized_vol(self) -> float:
         return np.std(self.ptf_returns) * np.sqrt(self.data_frequency.value)
+    
+    @cached_property
+    def annualized_downside_vol(self) -> float:
+        downside_returns = [r for r in self.ptf_returns if r < 0]
+        downside_std = np.std(downside_returns, ddof=1) * np.sqrt(self.data_frequency.value)
+        return downside_std
 
     @property
     def sharpe_ratio(self) -> float:
@@ -59,9 +88,7 @@ class Results:
     
     @property
     def sortino_ratio(self) -> float:
-        downside_returns = [r for r in self.ptf_returns if r < 0]
-        downside_std = np.std(downside_returns, ddof=1) * np.sqrt(self.data_frequency.value)
-        return (self.annualized_return-self.rf) / downside_std
+        return (self.annualized_return-self.rf) / self.annualized_downside_vol
     
     @property
     def drawdowns(self)-> float:
@@ -75,6 +102,17 @@ class Results:
         max_drawdown = np.min(self.drawdowns)
         return max_drawdown
 
+    @property
+    def max_drawdown_date(self) -> pd.Timestamp:
+        """Date du drawdown maximal."""
+        min_index = np.argmin(self.drawdowns)
+        return self.ptf_values.index[min_index]
+    
+    @property
+    def calmar_ratio(self):
+        """Calcul du ratio de Calmar."""
+        return (self.annualized_return) / abs(self.max_drawdown) if self.max_drawdown !=0 else np.nan
+    
     def compute_VaR(self, alpha: float = 0.95) -> float:
         """
         Compute the Value at Risk (VaR) of the strategy at the given confidence level (alpha).
@@ -112,6 +150,40 @@ class Results:
         # Compute CVaR as the average of returns below the VaR threshold
         cvar = np.mean([r for r in self.ptf_returns if r <= var_threshold])
         return cvar
+    
+    @property
+    def beta(self) -> float:
+        if self.benchmark_values is not None:
+            covariance = np.cov(self.ptf_returns, self.benchmark_returns)[0, 1]
+            benchmark_variance = np.var(self.benchmark_returns)
+            return covariance / benchmark_variance
+        return None
+    
+    @property
+    def treynor_ratio(self) -> float:
+        if self.benchmark_values is not None:
+            return (self.annualized_return - self.rf)/self.beta
+        return None
+    
+    @property
+    def tracking_error(self) ->float : 
+        if self.benchmark_values is not None:
+            active_returns = np.array(self.ptf_returns) - np.array(self.benchmark_returns)
+            return np.std(active_returns) * np.sqrt(self.data_frequency.value)
+        return None
+    
+    @property
+    def alpha(self) -> float:
+        if self.benchmark_values is not None:
+            return self.annualized_return - self.rf - self.beta*(self.annualized_benchmark_return - self.rf)
+        return None
+    
+    @property
+    def information_ratio(self) -> float:
+        if self.benchmark_values is not None:
+            return self.alpha/self.tracking_error
+        return None
+
 
     def get_statistics(self) -> pd.DataFrame:
         """
@@ -121,14 +193,26 @@ class Results:
             self.total_return,
             self.annualized_return, 
             self.annualized_vol, 
+            self.annualized_downside_vol,
             self.sharpe_ratio, 
             self.sortino_ratio, 
             self.max_drawdown,
+            self.max_drawdown_date,
+            self.calmar_ratio,
             self.compute_VaR(),
             self.compute_CVaR(),
+            self.beta,
+            self.treynor_ratio,
+            self.tracking_error,
+            self.alpha,
+            self.information_ratio,
         ]
+
         data = {
-            "Metrics": ["Total Return", "Annualized Return", "Volatility", "Sharpe Ratio", "Sortino Ratio", "Max Drawdown", "VaR 95%", "CVaR 95%"],
+            "Metrics": ["Total Return", "Annualized Return", "Volatility", "Downside Volatility",
+                        "Sharpe Ratio", "Sortino Ratio", "Max Drawdown", "Max Drawdown Date", "Calmar Ratio",
+                        "VaR 95%", "CVaR 95%", 
+                        "Beta", "Treynor Ratio", "Tracking Error", "Alpha", "Information Ratio"],
             self.strategy_name: metrics
         }
         formatted_data = []
@@ -136,8 +220,10 @@ class Results:
         for i, metric in enumerate(data[self.strategy_name]):
             if pd.isnull(metric):  # Si une métrique est NaN
                 formatted_data.append("N/A")
-            elif i in [0, 1, 2, 5, 6, 7]:  # Total Return, Annualized Return, Volatility, Max Drawdown (en pourcentage)
+            elif i in [0, 1, 2, 3, 6, 9, 10, 12, 13, 14]:  # Total Return, Annualized Return, Volatility, Max Drawdown (en pourcentage)
                 formatted_data.append("{:.2%}".format(metric))
+            elif i == 7:
+                formatted_data.append(datetime.strftime(metric, "%Y-%m-%d"))
             else:  # Ratios (Sharpe, Sortino)
                 formatted_data.append("{:.2f}".format(metric))
         data[self.strategy_name] = formatted_data
