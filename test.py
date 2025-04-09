@@ -1,7 +1,7 @@
 import pandas as pd
 from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy
 from src.tools import FrequencyType
-from src.utils import (run_strategy, compute_idiosyncratic_momentum_1y, 
+from src.utils import (compute_idiosyncratic_momentum_1y, 
                        compute_idiosyncratic_momentum_mean_reverting,
                        compute_fractile_momentum_1y, 
                        compute_fractile_momentum_mean_reverting)
@@ -17,9 +17,9 @@ compute_fractile_momentum_1y(df_price, df_weight, df_benchmark, df_sector)
 compute_fractile_momentum_mean_reverting(df_price, df_weight, df_benchmark, df_sector)
 
 compute_idiosyncratic_momentum_1y(df_price, df_weight, df_benchmark, df_sector)
-compute_idiosyncratic_momentum_mean_reverting(df_price, df_weight, df_benchmark, df_sector)
+compute_idiosyncratic_momentum_mean_reverting(df_price, df_weight, df_benchmark, df_sector) 
 
-# compute_momentum_mean_reverting(df_price, df_weight, df_benchmark)
+
 # start_date="2007-05-01"
 # end_date="2024-12-31"
 # strategy = FractileMomentumStrategy(

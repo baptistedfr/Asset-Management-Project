@@ -239,21 +239,32 @@ class Results:
         self.drawdown_plot()
         self.weights_plot()
         
-    def strat_plot(self) :
-
+    def strat_plot(self, log_scale=True):
         strat_values = list(self.ptf_values)
         dates = pd.to_datetime(self.ptf_values.index)
-        
-        if self.strategy_name == "Benchmark":
-            fig = go.Figure(data=go.Scatter(x=dates, y=strat_values,name=self.strategy_name, line=dict(dash='dot')))
-        else : 
-            fig = go.Figure(data=go.Scatter(x=dates, y=strat_values,name=self.strategy_name))
 
-        fig.update_layout(title=f'Strategy performance {self.strategy_name}', 
-                          xaxis_title='Dates', 
-                          yaxis_title='Portfolio Values', 
-                          font=dict(family="Courier New, monospace", size=14,color="RebeccaPurple"))
-        
+        if self.strategy_name == "Benchmark":
+            fig = go.Figure(data=go.Scatter(
+                x=dates, 
+                y=strat_values, 
+                name=self.strategy_name, 
+                line=dict(dash='dot')
+            ))
+        else:
+            fig = go.Figure(data=go.Scatter(
+                x=dates, 
+                y=strat_values, 
+                name=self.strategy_name
+            ))
+
+        fig.update_layout(
+            title=f'Strategy performance {self.strategy_name}', 
+            xaxis_title='Dates', 
+            yaxis_title='Portfolio Values ({"log" if log_scale else "linear"})',
+            font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"),
+            yaxis_type="log" if log_scale else "linear" 
+        )
+
         self.ptf_value_plot = fig
     
     def drawdown_plot(self):

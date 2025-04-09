@@ -172,3 +172,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+data/msci_prices.csv
+data/msci_prices.parquet
+data/indices.xlsx
