@@ -20,7 +20,7 @@ class Backtester:
         data_input (DataInput) : data input object containing assets prices historic
     """
 
-    def __init__(self, df_prices: pd.DataFrame, df_weights: pd.DataFrame, df_benchmark: pd.DataFrame = None):
+    def __init__(self, df_prices: pd.DataFrame, df_weights: pd.DataFrame, df_benchmark: pd.DataFrame = None, df_sector = None):
         """
         Initialise le Backtester avec les données nécessaires.
 
@@ -39,6 +39,7 @@ class Backtester:
         self.df_prices = self._prepare_dataframe(df_prices, "df_prices")
         self.df_weights = self._prepare_dataframe(df_weights, "df_weights")
         self.df_benchmark = self._prepare_dataframe(df_benchmark, "df_benchmark") if df_benchmark is not None else None
+        self.df_sector = df_sector if df_sector is not None else None
         
     @staticmethod
     def _prepare_dataframe(df: pd.DataFrame, name: str) -> pd.DataFrame:
@@ -68,7 +69,8 @@ class Backtester:
             strategy : AbstractStrategy, 
             initial_amount : float = 1000.0, 
             fees : float = 0.001, 
-            custom_name : str = None) -> Results :
+            custom_name : str = None,
+            recompute_benchmark : bool = False) -> Results :
         
         """Run the backtest over the asset period (& compare with the benchmark if selected)
         
@@ -112,34 +114,39 @@ class Backtester:
 
         # Initialiser les poids pour les tickers initiaux
         actual_tickers = self.get_tickers_in_range(all_dates[strategy.lookback_period])
+        
         weights = dict(zip(actual_tickers, [1/len(actual_tickers)] * len(actual_tickers)))
         weights_dict[all_dates[strategy.lookback_period]] = weights
 
         stored_benchmark = None
         if self.df_benchmark is not None :
-            benchmark_prices = self.df_benchmark.loc[(self.df_benchmark.index >= start_date) & (self.df_benchmark.index <= end_date), :].reindex(df_prices.index).fillna(method="ffill")
-            benchmark_returns = benchmark_prices.pct_change()
-            benchmark_value = initial_amount
-            stored_benchmark = [benchmark_value]
+            # benchmark_prices = self.df_benchmark.loc[(self.df_benchmark.index >= start_date) & (self.df_benchmark.index <= end_date), :].reindex(df_prices.index).fillna(method="ffill")
+            # benchmark_returns1 = benchmark_prices.pct_change()
+            if recompute_benchmark:
+                # Recalculer les valeurs du benchmark
+                stored_benchmark, sector_weight = self._compute_benchmark_values(
+                    df_returns=df_returns,
+                    start_date=start_date,
+                    end_date=end_date,
+                    all_dates=all_dates,
+                    initial_amount=initial_amount
+                )
+            else:
+                stored_benchmark = pd.read_excel("data/benchmark_recompute.xlsx", index_col=0, parse_dates=True).loc[all_dates[0]:]
+                sector_weight = pd.read_excel("data/sector_weights.xlsx", index_col=0, parse_dates=True).loc[all_dates[0]:]
         
         total_fees = 0
         for t in tqdm(range(strategy.lookback_period+1, len(df_prices)),desc=f"Running Backtesting {strat_name}"):
             current_date = all_dates[t]
 
             # Filtrer les rendements pour les tickers actifs
-            active_returns = df_returns.loc[df_prices.index == current_date, list(weights.keys())].fillna(0).squeeze().to_dict()
+            active_returns = df_returns.loc[df_returns.index == current_date, list(weights.keys())].fillna(0).squeeze().to_dict()
             
             # Calculer la valeur du portefeuille
             daily_returns = np.array([active_returns.get(ticker, 0) for ticker in weights.keys()])
             prev_weights = np.array(list(weights.values()))
             return_strat = np.dot(prev_weights, daily_returns)
             new_strat_value = strat_value * (1 + return_strat)
-            
-            """Compute & sotre the new benchmark value"""
-            if stored_benchmark is not None :
-                benchmark_rdt = benchmark_returns.loc[benchmark_returns.index == current_date, "MSCI"].iloc[0]
-                benchmark_value *= (1 + benchmark_rdt)
-                stored_benchmark.append(benchmark_value)
 
             if current_date in rebalancing_dates:
                 """Get the new tickers in the universe"""
@@ -147,7 +154,9 @@ class Backtester:
                 """Use Strategy to compute new weights (Rebalancement)"""
                 new_weights = strategy.get_position(df_prices.loc[df_prices.index <= current_date, list(actual_tickers)].fillna(method="ffill").to_numpy(), 
                                                     prev_weights, 
-                                                    benchmark_prices.loc[df_prices.index <= current_date,:].fillna(method="ffill").to_numpy())
+                                                    stored_benchmark.loc[stored_benchmark.index <= current_date,:].to_numpy(),
+                                                    sector_repartition = sector_weight.loc[sector_weight.index == current_date].iloc[0].to_dict(),
+                                                    tickers = actual_tickers)
                 
                 new_weights = dict(zip(actual_tickers, new_weights / np.sum(new_weights)))
                 """Compute transaction costs"""
@@ -163,8 +172,6 @@ class Backtester:
             total_weight = sum(new_weights.values())
             new_weights = {ticker: weight / total_weight for ticker, weight in new_weights.items()}
 
-            
-
             # Stocker les résultats
             weights = new_weights
             strat_value = new_strat_value
@@ -174,7 +181,7 @@ class Backtester:
         return self.output(strategy_name = strat_name, 
                            stored_values = stored_values, 
                            stored_weights = weights_dict, 
-                           stored_benchmark = stored_benchmark, 
+                           stored_benchmark = stored_benchmark[stored_benchmark.index>= list(weights_dict.keys())[0]] if stored_benchmark is not None else None, 
                            dates = list(weights_dict.keys()), 
                            frequency = FrequencyType.DAILY )
             
@@ -201,7 +208,7 @@ class Backtester:
         
         benchmark_values = None
         if stored_benchmark is not None :
-            benchmark_values = pd.Series(stored_benchmark, index=dates)
+            benchmark_values = stored_benchmark["Benchmark"]/stored_benchmark["Benchmark"].iloc[0] * ptf_values[0]
 
         results_strat = Results(ptf_values=ptf_values, ptf_weights=ptf_weights, 
                                 strategy_name=strategy_name, data_frequency=frequency, 
@@ -217,6 +224,72 @@ class Backtester:
 
         return results_strat
     
+    def _compute_benchmark_values(self, df_returns: pd.DataFrame, start_date, end_date, all_dates, initial_amount) -> list:
+        """
+        Calcule la valeur du benchmark sur la période.
+
+        Args:
+            df_returns (pd.DataFrame): Rendements des prix des actifs (index = dates, colonnes = tickers)
+            start_date (datetime): Date de début de la période d'analyse
+            end_date (datetime): Date de fin de la période d'analyse
+            all_dates (list[datetime]): Liste de toutes les dates de la période
+            initial_amount (float): Valeur initiale du portefeuille benchmark
+
+        Returns:
+            list[float]: Valeurs du benchmark au fil du temps
+        """
+        benchmark_value = initial_amount
+        stored_benchmark = [benchmark_value]
+
+        sector_map = dict(zip(self.df_sector['Ticker'], self.df_sector['Secteur'])) # ticker -> secteur
+        sector_weights_by_date = []
+
+        dates_weights_benchmark = self.df_weights.loc[(self.df_weights.index >= start_date) & 
+                                                    (self.df_weights.index <= end_date)].index
+        if dates_weights_benchmark.empty:
+            raise ValueError("Aucune donnée de poids disponible pour la période spécifiée.")    
+        
+        # Initialiser les poids de départ
+        weights_series = self.df_weights.loc[self.df_weights.index <= all_dates[0]].tail(1).squeeze().fillna(0)
+        if len(weights_series)==0:
+            weights_series = self.df_weights.iloc[0, :].fillna(0)
+
+        common_tickers = self.get_common_tickers(self.df_prices, weights_series.index)
+        filtered_weights = weights_series[weights_series.index.isin(common_tickers) & (weights_series > 0)]
+        benchmark_weights = (filtered_weights / filtered_weights.sum()).to_dict()
+
+        for t in tqdm(range(1, len(all_dates)), desc="Running Benchmark"):
+            current_date = all_dates[t]
+
+            # Récupérer les rendements du jour
+            benchmark_returns = df_returns.loc[df_returns.index == current_date, list(benchmark_weights.keys())].fillna(0).squeeze().to_dict()
+            daily_returns_benchmark = np.array([benchmark_returns.get(ticker, 0) for ticker in benchmark_weights.keys()])
+            prev_weights_benchmark = np.array(list(benchmark_weights.values()))
+            return_bench = np.dot(prev_weights_benchmark, daily_returns_benchmark)
+
+            benchmark_value *= (1 + return_bench)
+            stored_benchmark.append(benchmark_value)
+
+            # Mettre à jour les poids si c'est une date de rebalancement
+            if current_date in dates_weights_benchmark:
+                new_weights = self.df_weights.loc[current_date, :].reindex(self.df_prices.columns).fillna(0).to_dict()
+                new_weights = {ticker: weight for ticker, weight in new_weights.items() if weight > 0}
+            else:
+                # Appliquer le drift
+                new_weights = {ticker: benchmark_weights[ticker] * (1 + benchmark_returns[ticker]) for ticker in benchmark_weights}
+            benchmark_weights = {ticker: weight / sum(new_weights.values()) for ticker, weight in new_weights.items()}
+            sector_weights = {}
+            for ticker, weight in benchmark_weights.items():
+                sector = sector_map.get(ticker, "Unknown")
+                sector_weights[sector] = sector_weights.get(sector, 0) + weight
+
+            sector_weights_by_date.append(sector_weights)
+
+        df_benchmark = pd.Series(data=stored_benchmark, index=all_dates, name="Benchmark")
+        df_sector_weights = pd.DataFrame(sector_weights_by_date, index=all_dates[1:]) 
+
+        return df_benchmark, df_sector_weights
+
     @staticmethod
     def calculate_transaction_costs(old_weights: dict, new_weights: dict, fees: float) -> float:
         """
