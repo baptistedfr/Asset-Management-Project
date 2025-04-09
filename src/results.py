@@ -237,7 +237,7 @@ class Results:
     def create_plots(self) :
         self.strat_plot()
         self.drawdown_plot()
-        self.weights_plot()
+        # self.weights_plot()
         
     def strat_plot(self, log_scale=True):
         strat_values = list(self.ptf_values)
@@ -260,7 +260,7 @@ class Results:
         fig.update_layout(
             title=f'Strategy performance {self.strategy_name}', 
             xaxis_title='Dates', 
-            yaxis_title='Portfolio Values ({"log" if log_scale else "linear"})',
+            yaxis_title=f'Portfolio Values ({"log" if log_scale else "linear"})',
             font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"),
             yaxis_type="log" if log_scale else "linear" 
         )
@@ -305,7 +305,7 @@ class Results:
     ---------------------------------------------------------------------------------------"""
 
     @staticmethod
-    def compare_results(results : list["Results"]) -> "Results":
+    def compare_results(results : list["Results"], custom_name = "") -> "Results":
         """
         Compare multiple strategy results and returns a new Results instance.
         If the strategy is compared with the benchmark, the comparaison result is named after the strategy to anable comparaison with other strategies afterward.
@@ -318,10 +318,10 @@ class Results:
         """
 
         combined_statistics = Results.combine_df(results)
-        value_plot = Results.combine_value_plot(results)
-        drawdowns_plots = Results.combine_drawdown_plots(results)
-        weight_plots = Results.combine_weight_plot(results)
-
+        value_plot = Results.combine_value_plot(results, custom_name = custom_name)
+        drawdowns_plots = Results.combine_drawdown_plots(results, custom_name)
+        # weight_plots = Results.combine_weight_plot(results)
+        weight_plots = None
         if "Benchmark" in [res.strategy_name for res in results]:
             strat_name = [res.strategy_name for res in results if res.strategy_name != "Benchmark"][0]
         else :
@@ -376,7 +376,7 @@ class Results:
         return combined_statistics
     
     @staticmethod
-    def combine_value_plot(results : list["Results"]) -> go.Figure:
+    def combine_value_plot(results : list["Results"], log_scale = True, custom_name = "") -> go.Figure:
         """
         Combine the value plots by adding each trace or each plot results in a new plotly figure.
         To avoid adding twice the benchmark plot we check if the benchmark as already been added in the fig by check the scatter names.
@@ -397,13 +397,14 @@ class Results:
                     fig.add_trace(scatter)
                     existing_names.add(scatter.name)
 
-        fig.update_layout(title="Multiple Strategies Performance Comparison", xaxis_title="Date",
-            yaxis_title="Portfolio Value", font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"))
+        fig.update_layout(title=f"Multiple Strategies Performance Comparison {custom_name}", xaxis_title="Date",
+            yaxis_title=f'Portfolio Values ({"log" if log_scale else "linear"})',yaxis_type="log" if log_scale else "linear", 
+            font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"))
         
         return fig
     
     @staticmethod
-    def combine_drawdown_plots(results : list["Results"]) -> go.Figure:
+    def combine_drawdown_plots(results : list["Results"], custom_name : str = "") -> go.Figure:
         """
         Combine the drawdown plots by adding each trace or each plot results in a new plotly figure.
         To avoid adding twice the benchmark plot we check if the benchmark as already been added in the fig by check the scatter names.
@@ -422,7 +423,7 @@ class Results:
                     fig.add_trace(scatter)
                     existing_names.add(scatter.name)
 
-        fig.update_layout(title="Multiple Strategies Drawdown Comparison", xaxis_title="Date",
+        fig.update_layout(title=f"Multiple Strategies Drawdown Comparison {custom_name}", xaxis_title="Date",
             yaxis_title="Drawdown Values (%)", font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"))
         
         return fig
