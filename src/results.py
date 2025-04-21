@@ -248,13 +248,14 @@ class Results:
                 x=dates, 
                 y=strat_values, 
                 name=self.strategy_name, 
-                line=dict(dash='dot')
+                line=dict(dash='dot', width = 2)
             ))
         else:
             fig = go.Figure(data=go.Scatter(
                 x=dates, 
                 y=strat_values, 
-                name=self.strategy_name
+                name=self.strategy_name,
+                line=dict(width=2) 
             ))
 
         fig.update_layout(
@@ -262,7 +263,8 @@ class Results:
             xaxis_title='Dates', 
             yaxis_title=f'Portfolio Values ({"log" if log_scale else "linear"})',
             font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"),
-            yaxis_type="log" if log_scale else "linear" 
+            yaxis_type="log" if log_scale else "linear",
+            legend=dict(font=dict(size=18)) # <-- Taille de la légende augmentée ici)
         )
 
         self.ptf_value_plot = fig
@@ -399,7 +401,7 @@ class Results:
 
         fig.update_layout(title=f"Multiple Strategies Performance Comparison {custom_name}", xaxis_title="Date",
             yaxis_title=f'Portfolio Values ({"log" if log_scale else "linear"})',yaxis_type="log" if log_scale else "linear", 
-            font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"))
+            font=dict(family="Courier New, monospace", size=20, color="RebeccaPurple"))
         
         return fig
     
@@ -424,7 +426,7 @@ class Results:
                     existing_names.add(scatter.name)
 
         fig.update_layout(title=f"Multiple Strategies Drawdown Comparison {custom_name}", xaxis_title="Date",
-            yaxis_title="Drawdown Values (%)", font=dict(family="Courier New, monospace", size=14, color="RebeccaPurple"))
+            yaxis_title="Drawdown Values (%)", font=dict(family="Courier New, monospace", size=20, color="RebeccaPurple"))
         
         return fig
     

@@ -73,12 +73,12 @@ def run_strategy_multi(df_price, df_weight, df_benchmark, df_sector,
     output_excel_path = f"results/{folder_name}/{custom_name}.xlsx"
     combined_results = Results.compare_results(results, custom_name=custom_name)
 
-    with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
-        combined_results.df_statistics.to_excel(writer, sheet_name="Statistics", index=False)
-        df_ptf.to_excel(writer, sheet_name="Portfolio History", index=True)
+    # with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
+    #     combined_results.df_statistics.to_excel(writer, sheet_name="Statistics", index=False)
+    #     df_ptf.to_excel(writer, sheet_name="Portfolio History", index=True)
 
-    combined_results.ptf_value_plot.write_image(f"results/{folder_name}/{custom_name}_value_plot.png")
-    combined_results.ptf_drawdown_plot.write_image(f"results/{folder_name}/{custom_name}_drawdown_plot.png")
+    # combined_results.ptf_value_plot.write_image(f"results/{folder_name}/{custom_name}_value_plot.png")
+    # combined_results.ptf_drawdown_plot.write_image(f"results/{folder_name}/{custom_name}_drawdown_plot.png")
 
     print(combined_results.df_statistics.head(20))
     combined_results.ptf_value_plot.show()
