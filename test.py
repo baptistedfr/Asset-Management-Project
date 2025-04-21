@@ -1,10 +1,11 @@
 import pandas as pd
-from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy
+from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy,SharpeRatioStrategy
 from src.tools import FrequencyType
 from src.utils import (compute_idiosyncratic_momentum_1y, 
                        compute_idiosyncratic_momentum_mean_reverting,
                        compute_fractile_momentum_1y, 
-                       compute_fractile_momentum_mean_reverting)
+                       compute_fractile_momentum_mean_reverting,
+                       compute_sharpe_ratio)
 
 df_price = pd.read_parquet('data/msci_prices.parquet')
 df_weight = pd.read_parquet('data/indices.parquet')
@@ -18,8 +19,8 @@ df_sector = pd.read_parquet('data/sectors.parquet')
 
 # compute_idiosyncratic_momentum_1y(df_price, df_weight, df_benchmark, df_sector)
 # compute_idiosyncratic_momentum_mean_reverting(df_price, df_weight, df_benchmark, df_sector) 
-
-
+compute_sharpe_ratio(df_price, df_weight, df_benchmark, df_sector)
+"""
 start_date="2007-05-01"
 end_date="2024-12-31"
 strategy_monthly_quintile = FractileMomentumStrategy(
@@ -63,7 +64,27 @@ result2 = backtest.run(
     fees = 0.0
 )
 
-global_results = Results.compare_results([result, result2], custom_name="Comparaison des stratégies mean reverting")
+# --- Nouvelle Strat Sharpe Ratio Long-Only ---
+strategy_sharpe = SharpeRatioStrategy(
+    rebalance_frequency     = FrequencyType.MONTHLY,
+    lookback_period         = 252,    # 1 an de données
+    n_ante                  = 21,     # exclure le dernier mois
+    is_segmentation_sectorial = True, # ou False si tu ne veux pas de découpe sectorielle
+    df_sector               = df_sector.copy()
+)
+result3 = backtest.run(
+    start_date,
+    end_date,
+    strategy_sharpe,
+    custom_name = "Sharpe Ratio Long‑Only Monthly Sectoriel",
+    recompute_benchmark = False,
+    fees       = 0.0
+)
+
+
+global_results = Results.compare_results([result, result2,result3], custom_name="Comparaison des stratégies mean reverting")
 print(global_results.df_statistics.head(20))
 global_results.ptf_value_plot.show()
 global_results.ptf_drawdown_plot.show()
+
+"""

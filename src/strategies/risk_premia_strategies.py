@@ -194,3 +194,92 @@ class IdiosyncraticMomentumStrategy(AbstractStrategy):
                 weights[long_fractile] = 1 / len(long_fractile)
 
         return weights
+
+class SharpeRatioStrategy(AbstractStrategy):
+    def __init__(
+        self,rebalance_frequency: FrequencyType = FrequencyType.MONTHLY,lookback_period: float = 252,
+        n_ante: int = 21,is_segmentation_sectorial: bool = False,
+        df_sector: pd.DataFrame = pd.DataFrame(), nb_fractile: Optional[int] = None, # ajouté pour compatibilité
+        mean_reverting: Optional[bool] = None     # ajouté pour compatibilité
+   ):
+        super().__init__(rebalance_frequency, lookback_period)
+        self.n_ante = n_ante
+        self.is_segmentation_sectorial = is_segmentation_sectorial
+        self.df_sector = df_sector
+
+    def get_position(
+        self,
+        historical_data: np.ndarray,
+        current_position: np.ndarray,
+        benchmark: Optional[np.ndarray] = None,
+        tickers: list = None,
+        sector_repartition: dict = None
+    ) -> np.ndarray:
+        # Exclusion des n_ante derniers jours et extraction du lookback
+        data = historical_data[-int(self.lookback_period) - 1 : -self.n_ante - 1]
+        # Calcul des nouvelles pondérations
+        new_weights = self.fit(data, tickers, sector_repartition)
+        return new_weights
+
+    def fit(
+        self,
+        data: np.ndarray,
+        tickers: list = None,
+        sector_repartition: dict = None
+    ) -> np.ndarray:
+        """
+        Calcule les pondérations en se basant sur le ratio de Sharpe pour chaque actif.
+
+        Args:
+            data (np.ndarray): Prix historiques (shape: [time, assets]).
+            tickers (list): Liste des tickers correspondants aux assets.
+            sector_repartition (dict): Poids par secteur pour la segmentation sectorielle.
+
+        Returns:
+            np.ndarray: Nouvelle pondération pour chaque actif.
+        """
+        # Calcul des rendements journaliers
+        returns = data[1:] / data[:-1] - 1
+        # Moyenne et écart-type
+        mu = np.nanmean(returns, axis=0)
+        sigma = np.nanstd(returns, axis=0)
+        # Sharpe ratio (rf=0)
+        sharpe = np.where(sigma > 0, mu / sigma, 0.0)
+        sharpe = np.nan_to_num(sharpe, nan=0.0)
+
+        weights = np.zeros_like(sharpe)
+
+        # Pas de segmentation sectorielle
+        if not self.is_segmentation_sectorial or self.df_sector.empty or tickers is None:
+            positive = sharpe > 0
+            total = np.sum(sharpe[positive])
+            if total > 0:
+                weights[positive] = sharpe[positive] / total
+            return weights
+
+        # === Segmentation sectorielle ===
+        # Mapping ticker -> secteur
+        df_map = self.df_sector.set_index('Ticker')['Secteur'].to_dict()
+        ticker_sector = {t: df_map.get(t, 'Unknown') for t in tickers}
+        sector_groups = {}
+        for idx, t in enumerate(tickers):
+            sec = ticker_sector[t]
+            sector_groups.setdefault(sec, []).append(idx)
+
+        # Déterminer les poids de chaque secteur
+        if sector_repartition is None:
+            sector_weights = {s: 1 / len(sector_groups) for s in sector_groups}
+        else:
+            sector_weights = {s: sector_repartition.get(s, 0) for s in sector_groups}
+
+        # Allocation par secteur
+        for sector, indices in sector_groups.items():
+            sec_sharpe = sharpe[indices]
+            positive = sec_sharpe > 0
+            total = np.sum(sec_sharpe[positive])
+            if total > 0:
+                for local_i, global_i in enumerate(indices):
+                    if positive[local_i]:
+                        weights[global_i] = sector_weights[sector] * (sec_sharpe[local_i] / total)
+
+        return weights

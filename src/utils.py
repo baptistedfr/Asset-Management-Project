@@ -1,4 +1,4 @@
-from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy
+from src import Backtester, FractileMomentumStrategy, Results, IdiosyncraticMomentumStrategy,SharpeRatioStrategy
 from src.tools import FrequencyType
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
@@ -73,13 +73,12 @@ def run_strategy_multi(df_price, df_weight, df_benchmark, df_sector,
     output_excel_path = f"results/{folder_name}/{custom_name}.xlsx"
     combined_results = Results.compare_results(results, custom_name=custom_name)
 
-    # with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
-    #     combined_results.df_statistics.to_excel(writer, sheet_name="Statistics", index=False)
-    #     df_ptf.to_excel(writer, sheet_name="Portfolio History", index=True)
+    with pd.ExcelWriter(output_excel_path, engine='openpyxl') as writer:
+        combined_results.df_statistics.to_excel(writer, sheet_name="Statistics", index=False)
+        df_ptf.to_excel(writer, sheet_name="Portfolio History", index=True)
 
-    # combined_results.ptf_value_plot.write_image(f"results/{folder_name}/{custom_name}_value_plot.png")
-    # combined_results.ptf_drawdown_plot.write_image(f"results/{folder_name}/{custom_name}_drawdown_plot.png")
-
+    #combined_results.ptf_value_plot.write_image(f"results/{folder_name}/{custom_name}_value_plot.png")
+    #combined_results.ptf_drawdown_plot.write_image(f"results/{folder_name}/{custom_name}_drawdown_plot.png")
     print(combined_results.df_statistics.head(20))
     combined_results.ptf_value_plot.show()
     combined_results.ptf_drawdown_plot.show()
@@ -160,7 +159,18 @@ def compute_idiosyncratic_momentum_mean_reverting(df_price, df_weight, df_benchm
         folder_name="idiosyncratic_momentum_mean_reverting",
         custom_name="Idiosyncratic Momentum Mean Reverting"
     )
+def compute_sharpe_ratio(df_price, df_weight, df_benchmark, df_sector):
 
+    fractiles = {"Sharpe": 1} #faux fractile pour une seule itération
+
+    return compute_strategy(
+        df_price=df_price,df_weight=df_weight,
+        df_benchmark=df_benchmark,df_sector=df_sector,
+        strategy_class=SharpeRatioStrategy,lookback_period=252,
+        n_ante=21,mean_reverting=False,folder_name="sharpe",
+        custom_name="Sharpe Ratio",fractiles=fractiles, start_date="2007-05-01",
+        end_date="2024-12-31"
+    )
 
 # def run_strategy(df_price, df_weight, df_benchmark, df_sector, 
 #                  strategy_class, strategy_params, 
